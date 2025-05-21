@@ -30,13 +30,13 @@ from guidellm.scheduler.result import SchedulerRequestInfo
 from guidellm.scheduler.types import RequestT, ResponseT
 
 __all__ = [
-    "WorkerProcessRequest",
-    "WorkerProcessResult",
+    "GenerativeRequestsWorker",
+    "GenerativeRequestsWorkerDescription",
+    "RequestsWorker",
     "ResolveStatus",
     "WorkerDescription",
-    "RequestsWorker",
-    "GenerativeRequestsWorkerDescription",
-    "GenerativeRequestsWorker",
+    "WorkerProcessRequest",
+    "WorkerProcessResult",
 ]
 
 
@@ -475,6 +475,7 @@ class GenerativeRequestsWorker(RequestsWorker[GenerationRequest, ResponseSummary
                 request_args=RequestArgs(
                     target=self.backend.target,
                     headers={},
+                    params={},
                     payload={},
                 ),
                 start_time=resolve_start_time,
@@ -490,6 +491,7 @@ class GenerativeRequestsWorker(RequestsWorker[GenerationRequest, ResponseSummary
                 request_args=RequestArgs(
                     target=self.backend.target,
                     headers={},
+                    params={},
                     payload={},
                 ),
                 start_time=response.start_time,

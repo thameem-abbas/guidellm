@@ -10,13 +10,13 @@ from guidellm.backend import (
 )
 
 
-@pytest.mark.smoke()
+@pytest.mark.smoke
 def test_streaming_response_types():
     valid_types = get_args(StreamingResponseType)
     assert valid_types == ("start", "iter")
 
 
-@pytest.mark.smoke()
+@pytest.mark.smoke
 def test_streaming_text_response_default_initilization():
     response = StreamingTextResponse(
         type_="start",
@@ -30,7 +30,7 @@ def test_streaming_text_response_default_initilization():
     assert response.request_id is None
 
 
-@pytest.mark.smoke()
+@pytest.mark.smoke
 def test_streaming_text_response_initialization():
     response = StreamingTextResponse(
         type_="start",
@@ -52,7 +52,7 @@ def test_streaming_text_response_initialization():
     assert response.request_id == "123"
 
 
-@pytest.mark.smoke()
+@pytest.mark.smoke
 def test_streaming_text_response_marshalling():
     response = StreamingTextResponse(
         type_="start",
@@ -71,42 +71,48 @@ def test_streaming_text_response_marshalling():
         assert getattr(deserialized, key) == value
 
 
-@pytest.mark.smoke()
+@pytest.mark.smoke
 def test_request_args_default_initialization():
     args = RequestArgs(
         target="http://example.com",
         headers={},
+        params={},
         payload={},
     )
     assert args.timeout is None
     assert args.http2 is None
+    assert args.follow_redirects is None
 
 
-@pytest.mark.smoke()
+@pytest.mark.smoke
 def test_request_args_initialization():
     args = RequestArgs(
         target="http://example.com",
         headers={
             "Authorization": "Bearer token",
         },
+        params={},
         payload={
             "query": "Hello, world!",
         },
         timeout=10.0,
         http2=True,
+        follow_redirects=True,
     )
     assert args.target == "http://example.com"
     assert args.headers == {"Authorization": "Bearer token"}
     assert args.payload == {"query": "Hello, world!"}
     assert args.timeout == 10.0
     assert args.http2 is True
+    assert args.follow_redirects is True
 
 
-@pytest.mark.smoke()
+@pytest.mark.smoke
 def test_response_args_marshalling():
     args = RequestArgs(
         target="http://example.com",
         headers={"Authorization": "Bearer token"},
+        params={},
         payload={"query": "Hello, world!"},
         timeout=10.0,
         http2=True,
@@ -118,13 +124,14 @@ def test_response_args_marshalling():
         assert getattr(deserialized, key) == value
 
 
-@pytest.mark.smoke()
+@pytest.mark.smoke
 def test_response_summary_default_initialization():
     summary = ResponseSummary(
         value="Hello, world!",
         request_args=RequestArgs(
             target="http://example.com",
             headers={},
+            params={},
             payload={},
         ),
         start_time=0.0,
@@ -148,13 +155,14 @@ def test_response_summary_default_initialization():
     assert summary.request_id is None
 
 
-@pytest.mark.smoke()
+@pytest.mark.smoke
 def test_response_summary_initialization():
     summary = ResponseSummary(
         value="Hello, world!",
         request_args=RequestArgs(
             target="http://example.com",
             headers={},
+            params={},
             payload={},
         ),
         start_time=1.0,

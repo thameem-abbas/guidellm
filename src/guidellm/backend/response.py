@@ -6,10 +6,10 @@ from guidellm.config import settings
 from guidellm.objects.pydantic import StandardBaseModel
 
 __all__ = [
-    "StreamingResponseType",
-    "StreamingTextResponse",
     "RequestArgs",
     "ResponseSummary",
+    "StreamingResponseType",
+    "StreamingTextResponse",
 ]
 
 
@@ -48,17 +48,21 @@ class RequestArgs(StandardBaseModel):
 
     :param target: The target URL or function for the request.
     :param headers: The headers, if any, included in the request such as authorization.
+    :param params: The query parameters, if any, included in the request.
     :param payload: The payload / arguments for the request including the prompt /
         content and other configurations.
     :param timeout: The timeout for the request in seconds, if any.
     :param http2: Whether HTTP/2 was used for the request, if applicable.
+    :param follow_redirects: Whether the request should follow redirect responses.
     """
 
     target: str
     headers: dict[str, str]
+    params: dict[str, str]
     payload: dict[str, Any]
     timeout: Optional[float] = None
     http2: Optional[bool] = None
+    follow_redirects: Optional[bool] = None
 
 
 class ResponseSummary(StandardBaseModel):
