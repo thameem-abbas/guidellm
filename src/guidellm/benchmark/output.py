@@ -13,7 +13,7 @@ from rich.console import Console
 from rich.padding import Padding
 from rich.text import Text
 
-from guidellm.benchmark.benchmark import GenerativeBenchmark, GenerativeMetrics
+from guidellm.benchmark.benchmark import GenerativeBenchmark, GenerativeMetrics, BenchmarkValidationStatus
 from guidellm.benchmark.profile import (
     AsyncProfile,
     ConcurrentProfile,
@@ -408,6 +408,21 @@ class GenerativeBenchmarksConsole:
         self.benchmarks: Optional[list[GenerativeBenchmark]] = None
         self.console = Console()
 
+    def get_validation_status_color(self, status: BenchmarkValidationStatus) -> str:
+        """
+        Get the color associated with a benchmark validation status.
+        
+        :param status: The validation status of the benchmark.
+        :return: The color string to use for displaying the benchmark.
+        """
+        color_map = {
+            BenchmarkValidationStatus.VALID: Colors.SUCCESS,      # Green
+            BenchmarkValidationStatus.WARNING: Colors.WARNING,   # Yellow  
+            BenchmarkValidationStatus.ERROR: Colors.ERROR,       # Red
+            BenchmarkValidationStatus.NOT_APPLICABLE: Colors.INFO,  # Default blue
+        }
+        return color_map.get(status, Colors.INFO)
+
     @property
     def benchmarks_profile_str(self) -> str:
         """
@@ -579,6 +594,7 @@ class GenerativeBenchmarksConsole:
         max_char_per_col: int = 2**10,
         indent: int = 0,
         new_lines: int = 2,
+        first_column_styles: Optional[list[str]] = None,
     ):
         """
         Print a table to the console with the given headers and rows.
@@ -594,12 +610,20 @@ class GenerativeBenchmarksConsole:
             Defaults to 0.
         :param new_lines: The number of new lines to print before the table.
             Defaults to 0.
+        :param first_column_styles: Optional list of styles for the first column of each row.
+            If provided, must have the same length as rows.
         """
 
         if rows and any(len(row) != len(headers) for row in rows):
             raise ValueError(
                 f"Headers and rows length mismatch. Headers length: {len(headers)}, "
                 f"Row length: {len(rows[0]) if rows else 'N/A'}."
+            )
+
+        if first_column_styles and len(first_column_styles) != len(rows):
+            raise ValueError(
+                f"First column styles length mismatch. Styles length: {len(first_column_styles)}, "
+                f"Rows length: {len(rows)}."
             )
 
         max_characters_per_column = self.calculate_max_chars_per_column(
@@ -622,11 +646,13 @@ class GenerativeBenchmarksConsole:
         self.print_table_divider(
             max_characters_per_column, include_separators=True, indent=indent
         )
-        for row in rows:
+        for i, row in enumerate(rows):
+            first_col_style = first_column_styles[i] if first_column_styles else None
             self.print_table_row(
                 split_text_list_by_length(row, max_characters_per_column),
                 style="italic",
                 indent=indent,
+                first_column_style=first_col_style,
             )
         self.print_table_divider(
             max_characters_per_column, include_separators=False, indent=indent
@@ -765,19 +791,23 @@ class GenerativeBenchmarksConsole:
         self.print_line(value=line_values, style=line_styles, indent=indent)
 
     def print_table_row(
-        self, column_lines: list[list[str]], style: str, indent: int = 0
+        self, column_lines: list[list[str]], style: str, indent: int = 0, first_column_style: Optional[str] = None
     ):
         """
         Print a single row of a table to the console.
 
         :param column_lines: The lines of text to print for each column.
+        :param style: The default style to apply to columns.
         :param indent: The number of spaces to indent the line.
             Defaults to 0.
+        :param first_column_style: Optional style for the first column of the row.
         """
         for row in range(len(column_lines[0])):
             print_line = []
             print_styles = []
             for column in range(len(column_lines)):
+                # Use special style for first column if provided, otherwise use default style
+                column_style = first_column_style if column == 0 and first_column_style else style
                 print_line.extend(
                     [
                         column_lines[column][row],
@@ -785,7 +815,7 @@ class GenerativeBenchmarksConsole:
                         " ",
                     ]
                 )
-                print_styles.extend([style, Colors.INFO, ""])
+                print_styles.extend([column_style, Colors.INFO, ""])
             print_line = print_line[:-2]
             print_styles = print_styles[:-2]
             self.print_line(value=print_line, style=print_styles, indent=indent)
@@ -875,6 +905,7 @@ class GenerativeBenchmarksConsole:
             "Err",
         ]
         rows = []
+        first_column_styles = []
 
         for benchmark in self.benchmarks:
             rows.append(
@@ -900,9 +931,16 @@ class GenerativeBenchmarksConsole:
                     f"{benchmark.metrics.output_token_count.errored.total_sum:.0f}",
                 ]
             )
+            # Add validation status color for the benchmark name (first column)
+            validation_color = self.get_validation_status_color(benchmark.validation_status)
+            first_column_styles.append(f"italic {validation_color}")
 
         self.print_table(
-            headers=headers, rows=rows, title="Benchmarks Info", sections=sections
+            headers=headers, 
+            rows=rows, 
+            title="Benchmarks Info", 
+            sections=sections,
+            first_column_styles=first_column_styles,
         )
 
     def print_benchmarks_stats(self):
@@ -947,6 +985,7 @@ class GenerativeBenchmarksConsole:
             "p99",
         ]
         rows = []
+        first_column_styles = []
 
         for benchmark in self.benchmarks:
             rows.append(
@@ -970,12 +1009,16 @@ class GenerativeBenchmarksConsole:
                     f"{benchmark.metrics.time_per_output_token_ms.successful.percentiles.p99:.1f}",
                 ]
             )
+            # Add validation status color for the benchmark name (first column)
+            validation_color = self.get_validation_status_color(benchmark.validation_status)
+            first_column_styles.append(f"italic {validation_color}")
 
         self.print_table(
             headers=headers,
             rows=rows,
             title="Benchmarks Stats",
             sections=sections,
+            first_column_styles=first_column_styles,
         )
 
     def print_full_report(self):

@@ -1,8 +1,11 @@
 import random
 import uuid
+from enum import Enum
 from typing import Any, Literal, Optional, TypeVar, Union
 
 from pydantic import Field, computed_field
+
+from guidellm.logger import logger
 
 from guidellm.benchmark.profile import (
     AsyncProfile,
@@ -39,12 +42,78 @@ __all__ = [
     "BenchmarkMetrics",
     "BenchmarkRunStats",
     "BenchmarkT",
+    "BenchmarkValidationStatus",
     "GenerativeBenchmark",
     "GenerativeMetrics",
     "GenerativeTextErrorStats",
     "GenerativeTextResponseStats",
     "StatusBreakdown",
+    "validate_benchmark",
 ]
+
+
+class BenchmarkValidationStatus(str, Enum):
+    """
+    Enum for benchmark validation status indicating the quality and completeness
+    of the benchmark results.
+    """
+
+    VALID = "valid"
+    WARNING = "warning"
+    ERROR = "error"
+    NOT_APPLICABLE = "not_applicable"
+
+
+def validate_benchmark(benchmark: "GenerativeBenchmark") -> BenchmarkValidationStatus:
+    """
+    Validate a benchmark based on its arguments and results, returning the appropriate
+    validation status. This function contains the heuristics for determining if a
+    benchmark run was successful, has warnings, or failed validation.
+    
+    :param benchmark: The GenerativeBenchmark object to validate.
+    :return: The validation status indicating the quality of the benchmark results.
+    """
+    # Extract values from the benchmark object
+    args = benchmark.args
+    successful = benchmark.requests.successful
+    incomplete = benchmark.requests.incomplete
+    errored = benchmark.requests.errored
+    
+    # Default to not applicable for strategies that don't have specific validation
+    validation_status = BenchmarkValidationStatus.NOT_APPLICABLE
+    
+    # Validate concurrency mode runs
+    if isinstance(args.strategy, ConcurrentStrategy):
+        successful_count = len(successful)
+        concurrency = args.strategy.streams
+
+        if successful_count < concurrency:
+            validation_status = BenchmarkValidationStatus.ERROR
+            logger.error(
+                f"Concurrency validation failed: Only {successful_count} successful "
+                f"requests completed, which is less than the concurrency level of "
+                f"{concurrency}. This indicates the benchmark may not have run "
+                f"long enough or the server may not be handling the concurrent "
+                f"load properly."
+            )
+        elif successful_count < concurrency * 1.5:
+            validation_status = BenchmarkValidationStatus.WARNING
+            logger.warning(
+                f"Concurrency validation warning: Only {successful_count} successful "
+                f"requests completed, which is less than 1.5x the concurrency level "
+                f"of {concurrency} (expected at least {int(concurrency * 1.5)}). "
+                f"Consider running the benchmark longer or checking server performance."
+            )
+        else:
+            validation_status = BenchmarkValidationStatus.VALID
+    
+    # Future validation heuristics can be added here for other strategy types
+    # Example:
+    # elif isinstance(args.strategy, ThroughputStrategy):
+    #     # Add throughput-specific validation logic
+    #     pass
+    
+    return validation_status
 
 
 class BenchmarkArgs(StandardBaseModel):
@@ -277,6 +346,13 @@ class Benchmark(StandardBaseModel):
         description=(
             "Any additional information or metadata that was passed for this benchmark."
         )
+    )
+    validation_status: BenchmarkValidationStatus = Field(
+        default=BenchmarkValidationStatus.NOT_APPLICABLE,
+        description=(
+            "The validation status of the benchmark indicating the quality and "
+            "completeness of the results."
+        ),
     )
     metrics: BenchmarkMetrics = Field(
         description=(
@@ -738,7 +814,7 @@ class GenerativeBenchmark(Benchmark):
             else ([], [])
         )
 
-        return GenerativeBenchmark(
+        benchmark = GenerativeBenchmark(
             run_id=run_id,
             args=args,
             run_stats=run_stats,
@@ -833,3 +909,7 @@ class GenerativeBenchmark(Benchmark):
                 errored=errored,
             ),
         )
+
+        # Validate concurrency mode runs and set validation status
+        benchmark.validation_status = validate_benchmark(benchmark)
+        return benchmark
