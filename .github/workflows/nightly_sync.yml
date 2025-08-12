@@ -1,0 +1,100 @@
+# .github/workflows/sync-from-upstream.yml
+name: Nightly upstream sync (safe)
+
+on:
+  schedule:
+    # Runs at 06:00 UTC daily (2:00 AM ET during DST)
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+env:
+  # Set "owner/repo" of the upstream you forked
+  UPSTREAM: owner/upstream-repo
+  # Comma-separated list of branches to sync
+  BRANCHES: main,develop
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream & fetch
+        run: |
+          git remote add upstream https://github.com/${UPSTREAM}.git
+          git fetch --prune upstream
+          git fetch --tags upstream
+
+      - name: Sync branches
+        id: sync
+        shell: bash
+        run: |
+          IFS=, read -ra BRLIST <<< "${BRANCHES}"
+          NEED_PR=""
+          for BR in "${BRLIST[@]}"; do
+            BR=$(echo "$BR" | xargs)
+            if git show-ref --verify --quiet "refs/remotes/upstream/$BR"; then
+              # Ensure local branch exists (track origin if present)
+              if git show-ref --verify --quiet "refs/remotes/origin/$BR"; then
+                git checkout -B "$BR" "origin/$BR"
+              else
+                git checkout -B "$BR"
+              fi
+
+              # Try fast-forward merge
+              if git merge --ff-only "upstream/$BR"; then
+                # Push only if there are changes compared to origin
+                if ! git diff --quiet "origin/$BR..HEAD"; then
+                  git push origin "$BR"
+                  echo "Fast-forwarded and pushed $BR"
+                else
+                  echo "No changes for $BR"
+                fi
+              else
+                echo "Non-FF for $BR — preparing PR"
+                # Create a sync branch that exactly matches upstream/$BR
+                git checkout -B "sync/upstream-$BR" "upstream/$BR"
+                git push -f origin "sync/upstream-$BR"
+                NEED_PR="$NEED_PR $BR"
+              fi
+            else
+              echo "Upstream branch $BR not found — skipping"
+            fi
+          done
+          echo "need_pr=${NEED_PR}" >> "$GITHUB_OUTPUT"
+
+      - name: Open PRs for non-FF branches
+        if: steps.sync.outputs.need_pr != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for BR in ${{ steps.sync.outputs.need_pr }}; do
+            gh pr view "sync/upstream-$BR" --base "$BR" >/dev/null 2>&1 && {
+              echo "PR already exists for $BR"; continue;
+            }
+            gh pr create \
+              --base "$BR" \
+              --head "sync/upstream-$BR" \
+              --title "Sync $BR with upstream (nightly)" \
+              --body "Upstream diverged from fork. This PR updates \`$BR\` to the latest upstream."
+          done
+
+      - name: Push tags to fork
+        run: |
+          git push --tags origin
